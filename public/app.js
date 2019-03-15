@@ -17,11 +17,9 @@ $.getJSON("/articles", function (data) {
     console.log(data);
   });
   
-  
-  
   // Whenever someone clicks a fetch button
   $(document).on("click", ".btn-fetch", function () {
-    alert("Articles up-to-date!");
+    alert("Uploading Scraped Articles");
   
     $.ajax({
         method: "GET",
