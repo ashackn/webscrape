@@ -1,158 +1,191 @@
-// Dependencies
 var express = require("express");
-var bodyParser = require("body-parser");
+var logger = require("morgan");
 var mongoose = require("mongoose");
-var path = require("path");
-var methodOverride = require("method-override");
-var Note = require("./models/note.js");
-var Article = require("./models/article.js");
 
-// Scrape
-var request = require("request");
+// scrape using axios/cheerio
+var axios = require("axios");
 var cheerio = require("cheerio");
-mongoose.Promise = Promise;
+
+// Require all models
+var db = require("./models");
+
+var PORT = process.env.PORT ||3000;
+
+// Initialize Express
 var app = express();
-var PORT = process.env.PORT || 3000;
 
-app.use(bodyParser.urlencoded({
-  extended: false
-}));
+// Configure middleware
 
-app.use(methodOverride('_method'));
+// Use morgan logger for logging requests
+app.use(logger("dev"));
+// Parse request body as JSON
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+// Make public a static folder
+app.use(express.static("public"));
 
-app.use(express.static("./public"));
+// Connect to the Mongo DB
+// mongoose.connect("mongodb://localhost/oxygendb", { useNewUrlParser: true });
 
-var exphbs = require("express-handlebars");
+var MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost/oxygendb";
 
-app.set('views', __dirname + '/views');
-app.engine("handlebars", exphbs({ defaultLayout: "main", layoutsDir: __dirname + "/views/layouts" }));
-app.set("view engine", "handlebars");
+mongoose.connect(MONGODB_URI);
+    
+/// Routes
 
-// Database configuration with mongoose
-var databaseUri = "mongodb://localhost/mongoHeadlines";
-if (process.env.MONGODB_URI) {
-  mongoose.connect(process.env.MONGODB_URI);
-} else {
-  mongoose.connect(databaseUri);
-}
-var db = mongoose.connection;
-
-db.on("error", function(error) {
-  console.log("Mongoose Error: ", error);
+app.get("/", function(req, res) {
+  res.send(index.html);
 });
 
-db.once("open", function() {
-  console.log("Mongoose connection successful.");
-});
-
-//Routes
-
-app.get("/", function (req, res) {
-  Article.find({})
-    .exec(function (error, data) {
-      if (error) {
-        res.send(error);
-      }
-      else {
-        var newsObj = {
-          Article: data
-        };
-        res.render("index", newsObj);
-      }
-    });
-});
-
+// A GET route for scraping the oxygenmagazine website
 app.get("/scrape", function(req, res) {
-  request("https://www.harpersbazaar.com/beauty/", function(error, response, html) {
-    var $ = cheerio.load(html);
+    // First, we grab the body of the html with axios
+axios.get("https://www.oxygenmag.com").then(function (response) {
+
+    // Load the HTML into cheerio and save it to a variable
+    // '$' becomes a shorthand for cheerio's selector commands, much like jQuery's '$'
+    var $ = cheerio.load(response.data);
+
+ var result = {};
+
+ $("phoenix-ellipsis.m-ellipsis").each(function(i, element) {
+    // Save an empty result object
+    //("h2.m-ellipsis--text.m-card--header-text").next()
+
+
+    result.title = $(this)
+    .children("a").children("h2").text();
+
   
-    var result = {
-      title:"",
-      link:""
-    };
+    result.link = $(this)
+    .children("a").attr("href");
+    
 
-    $("h2.card__headline").each(function(i, element) {
+    result.summary = $
+    ("p.m-card--body.m-ellipsis--text").text();
 
-      result.title = $(element).children("a").text();
-      result.link = $(element).children("a").attr("href");
-      console.log(result);
-
-      var entry = new Article(result);
-
-      entry.save(function(err, doc) {
-        
-        if (err) {
-          console.log(err);
-        }
-        
-        else {
-          console.log(doc);
-        }
+      
+      // Create a new Article using the `result` object built from scraping
+    db.Article.create(result)
+      .then(function(dbArticle) {
+      res.json(dbArticle);
+        console.log(dbArticle.summary);
       });
+    
+    })
+      .catch(function(err) {
+        // If an error occurred, log it
+        res.json(err);
+      });
+  });
 
+});
+
+
+// Route for getting all Articles from the db
+app.get("/articles", function(req, res) {
+// Grab every document in the Articles collection
+db.Article.find({})
+  .sort({articleCreated:-1})
+  .then(function(dbArticle) {
+    // send article back to the client
+    console.log(dbArticle);
+    res.json(dbArticle);
+  })
+  .catch(function(err) {
+    // If an error occurred, send it to the client
+    res.json(err);
+  });
+});
+
+// Route for grabbing a specific Article by id, populate it with it's note
+app.get("/articles/:id", function(req, res) {
+// Using the id passed in the id parameter, prepare a query that finds the matching one in our db...
+db.Article.findOne({ _id: req.params.id })
+  // ..and populate all of the notes associated with it
+  .populate("note")
+  .then(function(dbArticle) {
+    // If we were able to successfully find an Article with the given id, send it back to the client
+    res.json(dbArticle);
+  })
+  .catch(function(err) {
+    // If an error occurred, send it to the client
+    res.json(err);
+  });
+});
+
+// Route for saving/updating an Article's associated Note
+app.post("/articles/:id", function(req, res) {
+// Create a new note and pass the req.body to the entry
+db.Note.create(req.body)
+  .then(function(dbNote) {
+    return db.Article.findOneAndUpdate({ _id: req.params.id }, { note: dbNote._id }, { new: true });
+  })
+  .then(function(dbArticle) {
+    // If we were able to successfully update an Article, send it back to the client
+    res.json(dbArticle);
+  })
+  .catch(function(err) {
+    // If an error occurred, send it to the client
+    res.json(err);
+  });
+});
+
+// Route for saving/updating article to be saved
+app.put("/saved/:id", function(req, res) {
+
+  db.Article
+    .findByIdAndUpdate({ _id: req.params.id }, { $set: { isSaved: true }})
+    .then(function(dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function(err) {
+      res.json(err);
     });
-    res.redirect("/");
-    console.log("Successfully Scraped");
-  });
 });
 
-app.post("/notes/:id", function (req, res) {
-  var newNote = new Note(req.body);
-  newNote.save(function (error, doc) {
-    if (error) {
-      console.log(error);
-    }
-    else {
-      console.log("this is the DOC " + doc);
-      Article.findOneAndUpdate({
-        "_id": req.params.id
-      },
-        { $push: { "note": doc._id } }, {new: true},  function (err, doc) {
-          if (err) {
-            console.log(err);
-          } else {
-            console.log("note saved: " + doc);
-            res.redirect("/notes/" + req.params.id);
-          }
-        });
-    }
-  });
-});
+// Route for getting saved article
+app.get("/saved", function(req, res) {
 
-app.get("/notes/:id", function (req, res) {
-  console.log("This is the req.params: " + req.params.id);
-  Article.find({
-    "_id": req.params.id
-  }).populate("note")
-    .exec(function (error, doc) {
-      if (error) {
-        console.log(error);
-      }
-      else {
-        var notesObj = {
-          Article: doc
-        };
-        console.log(notesObj);
-        res.render("notes", notesObj);
-      }
+  db.Article
+    .find({ isSaved: true })
+    .then(function(dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function(err) {
+      res.json(err);
     });
 });
 
-app.get("/delete/:id", function (req, res) {
-  Note.remove({
-    "_id":req.params.id
-  }).exec(function (error, doc) {
-    if (error) {
-      console.log(error);
-    }
-    else {
-      console.log("note deleted");
-      res.redirect("/" );
-    }
-  });
+// Route for deleting/updating saved article
+app.put("/delete/:id", function(req, res) {
+
+  db.Article
+    .findByIdAndUpdate(req.params.id, { $set: { isSaved: false }})
+    .then(function(dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function(err) {
+      res.json(err);
+    });
 });
 
+app.delete("/articles/:id", function(req, res){
 
-app.listen(PORT, function() {
-  console.log("App running on PORT " + PORT + "!");
+  db.Article
+  .findByIdAndUpdate(req.params.id, { $set: { isSaved: false }})
+    .then(function(dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function(err) {
+      res.json(err);
+    });
 });
+
+   
+    //  Start the server
+     app.listen(PORT, function() {
+       console.log("App running on port " + PORT + "!");
+     });
+    
+    

@@ -1,17 +1,16 @@
-// Require mongoose
 var mongoose = require("mongoose");
 
-// Create a Schema class with mongoose
+// Save a reference to the Schema constructor
 var Schema = mongoose.Schema;
 
-// make NoteSchema a Schema
+// Using the Schema constructor, create a new NoteSchema object
 var NoteSchema = new Schema({
-  note: {
-    type: String
-  }
+  title: String,
+  body: String
 });
 
+// This creates our model from the above schema, using mongoose's model method
 var Note = mongoose.model("Note", NoteSchema);
 
-// Export the model so we can use it on our server file.
+// Export the Note model
 module.exports = Note;
