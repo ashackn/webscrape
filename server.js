@@ -7,7 +7,7 @@ var axios = require("axios");
 var cheerio = require("cheerio");
 
 // Require all models
-var db = require("./models/Index");
+var db = require("./models/i");
 
 var PORT = process.env.PORT ||3000;
 
@@ -186,5 +186,5 @@ app.delete("/articles/:id", function(req, res){
      app.listen(PORT, function() {
        console.log("App running on port " + PORT + "!");
      });
-    
+    //code
     
