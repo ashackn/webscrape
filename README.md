@@ -14,7 +14,7 @@ Whenever a user visits my site, the app will scrape stories from Oxygen Magazine
 
 Users can leave comments on the articles displayed and revisit them later. Comments are saved to the database and associated with their articles. Users can also delete comments left on articles. All stored comments should be visible to every user.
 
-Deployed site: 
+Deployed site: https://dry-stream-81077.herokuapp.com/
 
 npm packages:
 
