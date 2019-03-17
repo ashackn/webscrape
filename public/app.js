@@ -98,6 +98,7 @@ $.getJSON("/articles", function (data) {
   
       .done(function (data) {
         console.log(data);
+        console.log(data);
       });
   });
   
